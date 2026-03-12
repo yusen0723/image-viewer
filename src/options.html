@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Viewer Settings</title>
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <main class="page">
+      <section class="panel">
+        <h1>站点规则</h1>
+        <p class="intro">默认对所有网站启用。你可以在这里切成白名单模式，或继续使用黑名单模式排除不想启用的网站。</p>
+
+        <label class="field">
+          <span>模式</span>
+          <select id="mode">
+            <option value="whitelist">白名单：仅在这些站点启用</option>
+            <option value="blacklist">黑名单：除这些站点外都启用</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>域名列表</span>
+          <textarea id="patterns" rows="8" spellcheck="false"></textarea>
+        </label>
+
+        <p class="support-text">
+          如果这个扩展对你有帮助，欢迎去
+          <a href="https://github.com/yusen0723/image-viewer/" target="_blank" rel="noopener noreferrer">GitHub 给项目点个 Star</a>。
+        </p>
+
+        <div class="actions">
+          <button id="save" type="button">保存</button>
+          <span id="status" aria-live="polite"></span>
+        </div>
+      </section>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>
