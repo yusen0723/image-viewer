@@ -10,13 +10,13 @@ function init() {
   chrome.storage.sync.get(
     {
       [STORAGE_KEY]: {
-        mode: "blacklist",
-        patterns: []
+        mode: "whitelist",
+        patterns: ["xiaohongshu.com"]
       }
     },
     (result) => {
       const settings = result[STORAGE_KEY];
-      modeEl.value = settings.mode || "blacklist";
+      modeEl.value = settings.mode || "whitelist";
       patternsEl.value = (settings.patterns || []).join("\n");
     }
   );

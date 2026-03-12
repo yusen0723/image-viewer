@@ -166,7 +166,7 @@
 
     const settingsPanelIntro = document.createElement("p");
     settingsPanelIntro.className = "codex-xhs-zoom-settings-intro";
-    settingsPanelIntro.textContent = "默认对所有网站启用。你可以改成白名单，或继续用黑名单排除部分站点。";
+    settingsPanelIntro.textContent = "默认使用白名单，并预置小红书。你也可以切换成黑名单模式。";
 
     const modeLabel = document.createElement("label");
     modeLabel.className = "codex-xhs-zoom-settings-field";
@@ -446,7 +446,7 @@
       return;
     }
 
-    viewerState.modeSelect.value = settings.mode || "blacklist";
+    viewerState.modeSelect.value = settings.mode || "whitelist";
     viewerState.patternsInput.value = (settings.patterns || []).join("\n");
     viewerState.settingsStatus.textContent = "";
   }
@@ -657,9 +657,15 @@
   }
 
   function collectImageGroup(sourceImage) {
+    const siteSpecificGroup = collectSiteSpecificImageGroup(sourceImage);
+    if (siteSpecificGroup) {
+      return siteSpecificGroup;
+    }
+
     const container = findImageGroupContainer(sourceImage);
     const candidates = Array.from(container.querySelectorAll("img"))
       .filter((node) => isVisible(node) && isLargeEnough(node))
+      .sort(compareImagesByVisualOrder)
       .map((node) => ({
         node,
         url: getBestImageUrl(node)
@@ -685,10 +691,10 @@
 
     const urls = deduped.map((item) => item.url);
     const sourceUrl = getBestImageUrl(sourceImage);
-    const sourceCandidateIndex = candidates.findIndex((item) => item.node === sourceImage);
-    const index = sourceCandidateIndex >= 0
-      ? countUniqueUrlsBefore(candidates, sourceCandidateIndex, sourceUrl)
-      : 0;
+    const index = Math.max(
+      0,
+      deduped.findIndex((item) => item.node === sourceImage || item.url === sourceUrl)
+    );
 
     return { urls, index };
   }
@@ -708,22 +714,111 @@
     return sourceImage.parentElement || document.body;
   }
 
-  function countUniqueUrlsBefore(candidates, endIndex, sourceUrl) {
-    const seen = new Set();
+  function collectSiteSpecificImageGroup(sourceImage) {
+    if (!isXiaohongshuHost(window.location.hostname)) {
+      return null;
+    }
 
-    for (let i = 0; i <= endIndex; i += 1) {
-      const url = candidates[i].url;
-      if (!url || seen.has(url)) {
+    const carousel = sourceImage.closest(
+      '[class*="swiper"], [class*="Swiper"], [class*="carousel"], [class*="Carousel"]'
+    );
+    if (!carousel) {
+      return null;
+    }
+
+    const slideNodes = Array.from(
+      carousel.querySelectorAll(
+        '[class*="swiper-slide"], [class*="SwiperSlide"], [data-swiper-slide-index], [class*="slick-slide"]'
+      )
+    );
+    if (slideNodes.length === 0) {
+      return null;
+    }
+
+    const sourceUrl = getBestImageUrl(sourceImage);
+    const items = [];
+    const seenSlideKeys = new Set();
+    for (const slide of slideNodes) {
+      const image = slide.contains(sourceImage)
+        ? sourceImage
+        : Array.from(slide.querySelectorAll("img")).find((node) => isVisible(node) && isLargeEnough(node));
+      if (!image) {
         continue;
       }
 
-      seen.add(url);
-      if (url === sourceUrl && i === endIndex) {
-        return seen.size - 1;
+      const url = getBestImageUrl(image);
+      if (!url) {
+        continue;
+      }
+
+      const slideKey = getSlideIdentity(slide, url);
+      if (seenSlideKeys.has(slideKey)) {
+        continue;
+      }
+
+      seenSlideKeys.add(slideKey);
+      items.push({
+        node: image,
+        url,
+        order: getSlideOrder(slide, items.length)
+      });
+    }
+
+    if (items.length <= 1) {
+      return null;
+    }
+
+    items.sort((a, b) => a.order - b.order);
+
+    return {
+      urls: items.map((item) => item.url),
+      index: Math.max(0, items.findIndex((item) => item.node === sourceImage || item.url === sourceUrl))
+    };
+  }
+
+  function isXiaohongshuHost(hostname) {
+    return hostname === "xiaohongshu.com"
+      || hostname.endsWith(".xiaohongshu.com")
+      || hostname === "xiaohongshu.net"
+      || hostname.endsWith(".xiaohongshu.net");
+  }
+
+  function getSlideIdentity(slide, fallbackUrl) {
+    if (slide.dataset.swiperSlideIndex) {
+      return `swiper:${slide.dataset.swiperSlideIndex}`;
+    }
+
+    const match = Array.from(slide.classList)
+      .map((className) => className.match(/(?:^|-)slide-(\d+)(?:-|$)/i))
+      .find(Boolean);
+    if (match) {
+      return `class:${match[1]}`;
+    }
+
+    return `url:${fallbackUrl}`;
+  }
+
+  function getSlideOrder(slide, fallbackOrder) {
+    if (slide.dataset.swiperSlideIndex) {
+      const numericIndex = Number.parseInt(slide.dataset.swiperSlideIndex, 10);
+      if (!Number.isNaN(numericIndex)) {
+        return numericIndex;
       }
     }
 
-    return Math.max(0, seen.size - 1);
+    return fallbackOrder;
+  }
+
+  function compareImagesByVisualOrder(a, b) {
+    const rectA = a.getBoundingClientRect();
+    const rectB = b.getBoundingClientRect();
+    const sameRow = Math.abs(rectA.top - rectB.top) < 12;
+
+    if (!sameRow) {
+      return rectA.top - rectB.top;
+    }
+
+    return rectA.left - rectB.left;
   }
 
   function normalizeImageUrl(url) {
@@ -776,7 +871,7 @@
   }
 
   function isEnabledForCurrentSite(allSettings, hostname) {
-    const mode = allSettings.mode || "blacklist";
+    const mode = allSettings.mode || "whitelist";
     const patterns = (allSettings.patterns || [])
       .map((item) => item.trim())
       .filter(Boolean);
@@ -799,8 +894,8 @@
       chrome.storage.sync.get(
         {
           [STORAGE_KEY]: {
-            mode: "blacklist",
-            patterns: []
+            mode: "whitelist",
+            patterns: ["xiaohongshu.com"]
           }
         },
         (result) => resolve(result[STORAGE_KEY])
